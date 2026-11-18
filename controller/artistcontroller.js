@@ -79,4 +79,48 @@ export const createArtist = async (req, res) => {
     }
 };
 
+export const getAllArtists = async (req, res) => {
+    try {
+        const artists = await Artist.find().sort({ createdAt: -1 });
+
+        return res.status(200).json({
+            status: true,
+            message: "Artists fetched successfully",
+            count: artists.length,
+            data: artists,
+        });
+    } catch (error) {
+        return res.status(500).json({
+            status: false,
+            message: "Internal server error",
+            error: error.message,
+        });
+    }
+};
+
+export const getArtistById = async (req, res) => {
+    try {
+        const artist = await Artist.findById(req.params.id);
+
+        if (!artist) {
+            return res.status(404).json({
+                status: false,
+                message: "Artist not found",
+            });
+        }
+
+        return res.status(200).json({
+            status: true,
+            message: "Artist fetched successfully",
+            data: artist,
+        });
+    } catch (error) {
+        return res.status(500).json({
+            status: false,
+            message: "Internal server error",
+            error: error.message,
+        });
+    }
+};
+
 export default createArtist;
