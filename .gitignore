@@ -1,0 +1,11 @@
+# Environment variables (keeps secret keys & URLs hidden from Git/GitHub)
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*

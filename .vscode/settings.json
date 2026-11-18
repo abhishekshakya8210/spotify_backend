@@ -1,0 +1,40 @@
+{
+    "cloak.hideComments": false,
+    "editor.tokenColorCustomizations": {
+        "textMateRules": [
+            {
+                "scope": [
+                    "source.env",
+                    "source.dotenv",
+                    "source.ini",
+                    "source.properties",
+                    "string.unquoted.env",
+                    "string.quoted.double.env",
+                    "string.quoted.single.env",
+                    "string.quoted.double.dotenv",
+                    "string.quoted.single.dotenv",
+                    "constant.numeric.env",
+                    "constant.language.env",
+                    "variable.other.environment.env",
+                    "support.constant.property-value.ini"
+                ],
+                "settings": {
+                    "foreground": "#00000000"
+                }
+            },
+            {
+                "scope": [
+                    "variable.other.env",
+                    "keyword.other.definition.ini",
+                    "keyword.other.definition.properties",
+                    "support.type.property-name.dotenv",
+                    "punctuation.separator.key-value.ini",
+                    "keyword.operator.assignment.dotenv"
+                ],
+                "settings": {
+                    "foreground": "#9CDCFE"
+                }
+            }
+        ]
+    }
+}
