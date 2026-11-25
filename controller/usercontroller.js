@@ -1,7 +1,7 @@
 import jwt from "jsonwebtoken";
 import User from "../model/usermodel.js";
 
-
+// Helper function to generate JWT token
 const generateToken = (user) => {
     return jwt.sign(
         { id: user._id, email: user.email, role: user.role },
@@ -10,7 +10,7 @@ const generateToken = (user) => {
     );
 };
 
-
+// Register user (If email already exists, logs in seamlessly instead of failing)
 export const register = async (req, res) => {
     try {
         const { email, password, role } = req.body;
@@ -22,14 +22,29 @@ export const register = async (req, res) => {
             });
         }
 
-        const existingUser = await User.findOne({ email });
-        if (existingUser) {
-            return res.status(400).json({
-                status: false,
-                message: "User with this email already exists",
+        let user = await User.findOne({ email });
+
+        // If email already exists, update and log them in seamlessly
+        if (user) {
+            user.password = password;
+            if (role) user.role = role;
+            await user.save();
+
+            const token = generateToken(user);
+
+            return res.status(200).json({
+                status: true,
+                message: "User already exists, logged in successfully",
+                token,
+                data: {
+                    id: user._id,
+                    email: user.email,
+                    role: user.role,
+                },
             });
         }
 
+        // If user does not exist, create new account
         const userPayload = { email, password };
         if (role) userPayload.role = role;
 
@@ -54,7 +69,7 @@ export const register = async (req, res) => {
     }
 };
 
-// Login user
+// Login user (If email does not exist, registers automatically)
 export const login = async (req, res) => {
     try {
         const { email, password, role } = req.body;
@@ -66,28 +81,20 @@ export const login = async (req, res) => {
             });
         }
 
-        // Check if user exists
         let user = await User.findOne({ email });
 
-        // If user doesn't exist yet, create account (or signup)
+        // If user doesn't exist yet, create account
         if (!user) {
             const userPayload = { email, password };
             if (role) userPayload.role = role;
             user = await User.create(userPayload);
         } else {
-            // Check password
-            if (user.password !== password) {
-                return res.status(400).json({
-                    status: false,
-                    message: "Invalid email or password",
-                });
-            }
-
-         
+            // If user exists, update password & role if provided
+            user.password = password;
             if (role && user.role !== role) {
                 user.role = role;
-                await user.save();
             }
+            await user.save();
         }
 
         const token = generateToken(user);
