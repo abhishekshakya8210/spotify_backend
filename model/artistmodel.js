@@ -1,5 +1,19 @@
-
 import mongoose from "mongoose";
+
+const songSchema = new mongoose.Schema({
+    title: {
+        type: String,
+        required: true,
+    },
+    url: {
+        type: String,
+        default: "",
+    },
+    duration: {
+        type: String,
+        default: "",
+    }
+}, { timestamps: true });
 
 const artistSchema = new mongoose.Schema({
     name: {
@@ -28,6 +42,10 @@ const artistSchema = new mongoose.Schema({
     verified: {
         type: Boolean,
         default: false,
+    },
+    songs: {
+        type: [songSchema],
+        default: [],
     }
 }, { timestamps: true });
 
