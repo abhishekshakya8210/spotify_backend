@@ -15,6 +15,16 @@ app.use(express.json());
 app.use("/api", userrouting);
 app.use("/api", artisting);
 
+// Global error handler for Multer and unexpected errors
+app.use((err, req, res, next) => {
+    console.error("Server Error:", err);
+    return res.status(err.status || 400).json({
+        status: false,
+        message: err.message || "An error occurred during request processing",
+        error: err.toString(),
+    });
+});
+
 const startServer = async () => {
     try {
         await connectdb();

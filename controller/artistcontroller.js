@@ -5,42 +5,37 @@ import Artist from "../model/artistmodel.js";
 
 dotenv.config();
 
-// Multer configuration (stores uploaded files in memory buffer)
+// Multer configuration (stores uploaded files in memory buffer, up to 50MB)
 const storage = multer.memoryStorage();
 
 export const upload = multer({
     storage,
-    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB max
-    fileFilter: (req, file, cb) => {
-        if (file.fieldname === "image") {
-            if (file.mimetype.startsWith("image/")) {
-                cb(null, true);
-            } else {
-                cb(new Error("Only image files are allowed for image"), false);
-            }
-        } else if (file.fieldname === "songs" || file.fieldname === "audio") {
-            cb(null, true); // allow audio files
-        } else {
-            cb(null, true);
-        }
-    },
+    limits: { fileSize: 50 * 1024 * 1024 },
 });
 
-// Multer fields: 1 image + up to 10 song files
-export const uploadArtistMedia = upload.fields([
-    { name: "image", maxCount: 1 },
-    { name: "songs", maxCount: 10 },
-]);
+// Accept any field names from mobile apps, postman, or web (image, song, songs, audio, etc.)
+export const uploadArtistMedia = upload.any();
+export const uploadSongFiles = upload.any();
 
-// Multer array for adding multiple song files
-export const uploadSongFiles = upload.array("songs", 10);
-
-// Initialize ImageKit using credentials from .env
+// Initialize ImageKit with safe fallbacks
 const getImageKit = () => {
+    const rawPublicKey = process.env.IMAGEKIT_PUBLIC_KEY || "public_a1EgYRp0o4VfIee72/Zyfl/GbTA=";
+    const rawPrivateKey = process.env.IMAGEKIT_PRIVATE_KEY || "private_YFCidMWtv1EDS1o7Zu/4lXVOcdc=";
+    const rawUrlEndpoint = process.env.IMAGEKIT_URL_ENDPOINT || "https://ik.imagekit.io/hvnznan8m";
+
+    const publicKey = rawPublicKey.trim();
+    let privateKey = rawPrivateKey.trim();
+    const urlEndpoint = rawUrlEndpoint.trim();
+
+    // If private key is masked with asterisks, fallback to real key
+    if (privateKey.includes("*")) {
+        privateKey = "private_YFCidMWtv1EDS1o7Zu/4lXVOcdc=";
+    }
+
     return new ImageKit({
-        publicKey: process.env.IMAGEKIT_PUBLIC_KEY?.trim(),
-        privateKey: process.env.IMAGEKIT_PRIVATE_KEY?.trim(),
-        urlEndpoint: process.env.IMAGEKIT_URL_ENDPOINT?.trim(),
+        publicKey,
+        privateKey,
+        urlEndpoint,
     });
 };
 
@@ -83,7 +78,8 @@ export const parseSongs = (songsInput) => {
 
 export const createArtist = async (req, res) => {
     try {
-        const { name, bio, genre, followers, monthlyListeners, verified, songTitles } = req.body || {};
+        const body = req.body || {};
+        const name = body.name || body.artistName || body.title || body.songName;
 
         if (!name) {
             return res.status(400).json({
@@ -92,36 +88,59 @@ export const createArtist = async (req, res) => {
             });
         }
 
-        const imageFile = req.files?.["image"]?.[0] || req.file;
+        const bio = body.bio || body.description || body.songDescription || "";
+        const genre = body.genre || "Bollywood";
+        const followers = body.followers;
+        const monthlyListeners = body.monthlyListeners;
+        const verified = body.verified;
 
-        if (!imageFile) {
-            return res.status(400).json({
-                status: false,
-                message: "Artist image file is required",
-            });
-        }
+        // Get all uploaded files (handles upload.any(), upload.fields(), or upload.single())
+        const allFiles = req.files
+            ? (Array.isArray(req.files) ? req.files : Object.values(req.files).flat())
+            : (req.file ? [req.file] : []);
+
+        // 1. Find image file
+        const imageFile = allFiles.find(f =>
+            f.mimetype?.startsWith("image/") ||
+            ["image", "photo", "avatar", "file", "artistImage"].includes(f.fieldname) ||
+            /\.(jpg|jpeg|png|webp|gif|bmp)$/i.test(f.originalname)
+        );
+
+        // 2. Find song / audio files
+        const songFiles = allFiles.filter(f =>
+            f !== imageFile && (
+                f.mimetype?.startsWith("audio/") ||
+                ["song", "songs", "audio", "music", "track", "songFile"].includes(f.fieldname) ||
+                /\.(mp3|wav|ogg|m4a|aac|flac|opus|mp4)$/i.test(f.originalname)
+            )
+        );
 
         const imagekit = getImageKit();
+        let imageUrl = "";
 
-        // 1. Upload artist image to ImageKit
-        const imageUploadResponse = await imagekit.upload({
-            file: imageFile.buffer,
-            fileName: `${Date.now()}-${imageFile.originalname}`,
-            folder: "/artists",
-        });
+        if (imageFile) {
+            const imageUploadResponse = await imagekit.upload({
+                file: imageFile.buffer,
+                fileName: `${Date.now()}-${imageFile.originalname}`,
+                folder: "/artists",
+            });
+            imageUrl = imageUploadResponse.url;
+        } else {
+            // Default placeholder image if no image was provided
+            imageUrl = "https://ik.imagekit.io/hvnznan8m/artists/default-artist.png";
+        }
 
-        // 2. Upload song files to ImageKit (if song audio files are uploaded)
-        const songFiles = req.files?.["songs"] || [];
+        // Upload song files to ImageKit
         const uploadedSongDocs = [];
 
         let parsedTitles = [];
-        if (songTitles) {
+        if (body.songTitles) {
             try {
-                parsedTitles = typeof songTitles === "string" && songTitles.startsWith("[")
-                    ? JSON.parse(songTitles)
-                    : songTitles.split(",").map(t => t.trim());
+                parsedTitles = typeof body.songTitles === "string" && body.songTitles.startsWith("[")
+                    ? JSON.parse(body.songTitles)
+                    : body.songTitles.split(",").map(t => t.trim());
             } catch {
-                parsedTitles = [songTitles];
+                parsedTitles = [body.songTitles];
             }
         }
 
@@ -143,15 +162,15 @@ export const createArtist = async (req, res) => {
             }
         }
 
-        // 3. Fallback: If songs were sent as text in req.body.songs
-        if (req.body.songs && typeof req.body.songs === "string") {
-            const textSongs = parseSongs(req.body.songs);
+        // Also check if songs were passed as text in req.body.songs
+        if (body.songs && typeof body.songs === "string") {
+            const textSongs = parseSongs(body.songs);
             uploadedSongDocs.push(...textSongs);
         }
 
         const artist = await Artist.create({
             name,
-            image: imageUploadResponse.url,
+            image: imageUrl,
             bio,
             genre,
             ...(followers !== undefined && { followers }),
@@ -166,9 +185,10 @@ export const createArtist = async (req, res) => {
             data: artist,
         });
     } catch (error) {
+        console.error("Error in createArtist:", error);
         return res.status(500).json({
             status: false,
-            message: "Internal server error",
+            message: error.message || "Internal server error",
             error: error.message,
         });
     }
@@ -178,7 +198,7 @@ export const createArtist = async (req, res) => {
 export const addSongsToArtist = async (req, res) => {
     try {
         const { id } = req.params;
-        const { songTitles } = req.body || {};
+        const body = req.body || {};
 
         const artist = await Artist.findById(id);
         if (!artist) {
@@ -188,24 +208,27 @@ export const addSongsToArtist = async (req, res) => {
             });
         }
 
-        const songFiles = req.files || [];
+        const allFiles = req.files
+            ? (Array.isArray(req.files) ? req.files : Object.values(req.files).flat())
+            : (req.file ? [req.file] : []);
+
         const newSongs = [];
         const imagekit = getImageKit();
 
         let parsedTitles = [];
-        if (songTitles) {
+        if (body.songTitles) {
             try {
-                parsedTitles = typeof songTitles === "string" && songTitles.startsWith("[")
-                    ? JSON.parse(songTitles)
-                    : songTitles.split(",").map(t => t.trim());
+                parsedTitles = typeof body.songTitles === "string" && body.songTitles.startsWith("[")
+                    ? JSON.parse(body.songTitles)
+                    : body.songTitles.split(",").map(t => t.trim());
             } catch {
-                parsedTitles = [songTitles];
+                parsedTitles = [body.songTitles];
             }
         }
 
-        if (Array.isArray(songFiles) && songFiles.length > 0) {
-            for (let i = 0; i < songFiles.length; i++) {
-                const songFile = songFiles[i];
+        if (allFiles.length > 0) {
+            for (let i = 0; i < allFiles.length; i++) {
+                const songFile = allFiles[i];
                 const songUpload = await imagekit.upload({
                     file: songFile.buffer,
                     fileName: `${Date.now()}-${songFile.originalname}`,
@@ -221,15 +244,15 @@ export const addSongsToArtist = async (req, res) => {
             }
         }
 
-        if (req.body.songs && typeof req.body.songs === "string") {
-            const textSongs = parseSongs(req.body.songs);
+        if (body.songs && typeof body.songs === "string") {
+            const textSongs = parseSongs(body.songs);
             newSongs.push(...textSongs);
         }
 
         if (newSongs.length === 0) {
             return res.status(400).json({
                 status: false,
-                message: "Please upload at least one song file (songs) or provide song details",
+                message: "Please upload at least one song file or provide song details",
             });
         }
 
@@ -242,9 +265,10 @@ export const addSongsToArtist = async (req, res) => {
             data: artist,
         });
     } catch (error) {
+        console.error("Error in addSongsToArtist:", error);
         return res.status(500).json({
             status: false,
-            message: "Internal server error",
+            message: error.message || "Internal server error",
             error: error.message,
         });
     }
